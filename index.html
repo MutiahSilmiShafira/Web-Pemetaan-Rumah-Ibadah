@@ -13,6 +13,7 @@
         <link rel="stylesheet" href="css/fontawesome-all.min.css">
         <link rel="stylesheet" href="css/leaflet.photon.css">
         <link rel="stylesheet" href="css/leaflet-measure.css">
+        <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&libraries=places"></script>
         <style>
         html, body, #map {
             width: 100%;
@@ -20,12 +21,75 @@
             padding: 0;
             margin: 0;
         }
+        
+        .search-card {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background-color: white;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            width: 90%;
+            max-width: 400px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .search-input-container {
+            width: 100%;
+            display: flex;
+            align-items: center;
+        }
+        
+        #search-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 16px;
+            box-sizing: border-box;
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352a144 144 0 1 0 0-288 144 144 0 1 0 0 288z" fill="%23666666"/></svg>');
+            background-repeat: no-repeat;
+            background-position: 10px center;
+            background-size: 20px;
+            padding-left: 40px;
+        }
+        
+        #search-input:focus {
+            outline: none;
+            border-color: #4285F4;
+        }
+        
+        @media (max-width: 600px) {
+            .search-card {
+                width: 95%;
+            }
+        }
+        
+        .card-handle {
+            width: 50px;
+            height: 5px;
+            background-color: #ccc;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            cursor: grab;
+        }
         </style>
         <title></title>
     </head>
     <body>
-        <div id="map">
+        <div id="map"></div>
+        <div id="search-card" class="search-card">
+            <div class="card-handle"></div>
+            <div class="search-input-container">
+                <input id="search-input" type="text" placeholder="Cari lokasi atau masukkan koordinat">
+            </div>
         </div>
+
         <script src="js/qgis2web_expressions.js"></script>
         <script src="js/leaflet.js"></script>
         <script src="js/L.Control.Layers.Tree.min.js"></script>
@@ -48,14 +112,14 @@
             highlightLayer = e.target;
 
             if (e.target.feature.geometry.type === 'LineString' || e.target.feature.geometry.type === 'MultiLineString') {
-              highlightLayer.setStyle({
-                color: '#ffff00',
-              });
+                highlightLayer.setStyle({
+                    color: '#ffff00',
+                });
             } else {
-              highlightLayer.setStyle({
-                fillColor: '#ffff00',
-                fillOpacity: 1
-              });
+                highlightLayer.setStyle({
+                    fillColor: '#ffff00',
+                    fillOpacity: 1
+                });
             }
         }
         var crs = new L.Proj.CRS('EPSG:23836', '+proj=tmerc +lat_0=0 +lon_0=112.5 +k=0.9999 +x_0=200000 +y_0=1500000 +ellps=WGS84 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs', {
@@ -70,34 +134,31 @@
         var hash = new L.Hash(map);
         map.attributionControl.setPrefix('<a href="https://github.com/tomchadwin/qgis2web" target="_blank">qgis2web</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; <a href="https://qgis.org">QGIS</a>');
         var autolinker = new Autolinker({truncate: {length: 30, location: 'smart'}});
-        // remove popup's row if "visible-with-data"
         function removeEmptyRowsFromPopupContent(content, feature) {
-         var tempDiv = document.createElement('div');
-         tempDiv.innerHTML = content;
-         var rows = tempDiv.querySelectorAll('tr');
-         for (var i = 0; i < rows.length; i++) {
-             var td = rows[i].querySelector('td.visible-with-data');
-             var key = td ? td.id : '';
-             if (td && td.classList.contains('visible-with-data') && feature.properties[key] == null) {
-                 rows[i].parentNode.removeChild(rows[i]);
-             }
-         }
-         return tempDiv.innerHTML;
+           var tempDiv = document.createElement('div');
+           tempDiv.innerHTML = content;
+           var rows = tempDiv.querySelectorAll('tr');
+           for (var i = 0; i < rows.length; i++) {
+               var td = rows[i].querySelector('td.visible-with-data');
+               var key = td ? td.id : '';
+               if (td && td.classList.contains('visible-with-data') && feature.properties[key] == null) {
+                   rows[i].parentNode.removeChild(rows[i]);
+               }
+           }
+           return tempDiv.innerHTML;
         }
-        // add class to format popup if it contains media
-		function addClassToPopupIfMedia(content, popup) {
-			var tempDiv = document.createElement('div');
-			tempDiv.innerHTML = content;
-			if (tempDiv.querySelector('td img')) {
-				popup._contentNode.classList.add('media');
-					// Delay to force the redraw
-					setTimeout(function() {
-						popup.update();
-					}, 10);
-			} else {
-				popup._contentNode.classList.remove('media');
-			}
-		}
+        function addClassToPopupIfMedia(content, popup) {
+            var tempDiv = document.createElement('div');
+            tempDiv.innerHTML = content;
+            if (tempDiv.querySelector('td img')) {
+                popup._contentNode.classList.add('media');
+                    setTimeout(function() {
+                        popup.update();
+                    }, 10);
+            } else {
+                popup._contentNode.classList.remove('media');
+            }
+        }
         var zoomControl = L.control.zoom({
             position: 'topleft'
         }).addTo(map);
@@ -167,102 +228,99 @@
                 mouseover: highlightFeature,
             });
             var popupContent = '<table>\
-                    <tr>\
-                        <td colspan="2">' + (feature.properties['OBJECTID'] !== null ? autolinker.link(String(feature.properties['OBJECTID']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <td colspan="2">' + (feature.properties['name'] !== null ? autolinker.link(String(feature.properties['name']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <td colspan="2">' + (feature.properties['NO'] !== null ? autolinker.link(String(feature.properties['NO']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <th scope="row">Nama</th>\
-                        <td>' + (feature.properties['NAMA'] !== null ? autolinker.link(String(feature.properties['NAMA']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <th scope="row">Alamat</th>\
-                        <td>' + (feature.properties['ALAMAT'] !== null ? autolinker.link(String(feature.properties['ALAMAT']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <th scope="row">Koordinat</th>\
-                        <td>' + (feature.properties['KOORDINAT'] !== null ? autolinker.link(String(feature.properties['KOORDINAT']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <th scope="row">Jenis Rumah Ibadah</th>\
-                        <td>' + (feature.properties['JENIS_TEMP'] !== null ? autolinker.link(String(feature.properties['JENIS_TEMP']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <th scope="row">Kecamatan</th>\
-                        <td>' + (feature.properties['KECAMATAN'] !== null ? autolinker.link(String(feature.properties['KECAMATAN']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <th scope="row">Kelurahan</th>\
-                        <td>' + (feature.properties['KELURAHAN'] !== null ? autolinker.link(String(feature.properties['KELURAHAN']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <td colspan="2">' + (feature.properties['TELEPON'] !== null ? autolinker.link(String(feature.properties['TELEPON']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <th scope="row">Foto</th>\
-                        <td>' + (feature.properties['Foto'] !== null ? '<img src="images/' + String(feature.properties['Foto']).replace(/[\\/:]/g, '_').trim().replace(/'/g, '\'').replace(/"/g, '&quot;') + '">' : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <td colspan="2">' + (feature.properties['NO_1'] !== null ? autolinker.link(String(feature.properties['NO_1']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <td colspan="2">' + (feature.properties['NAMA_1'] !== null ? autolinker.link(String(feature.properties['NAMA_1']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <td colspan="2">' + (feature.properties['ALAMAT_1'] !== null ? autolinker.link(String(feature.properties['ALAMAT_1']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <td colspan="2">' + (feature.properties['KOORDINA_1'] !== null ? autolinker.link(String(feature.properties['KOORDINA_1']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <td colspan="2">' + (feature.properties['JENIS_TE_1'] !== null ? autolinker.link(String(feature.properties['JENIS_TE_1']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <td colspan="2">' + (feature.properties['KECAMATA_1'] !== null ? autolinker.link(String(feature.properties['KECAMATA_1']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <td colspan="2">' + (feature.properties['KELURAHA_1'] !== null ? autolinker.link(String(feature.properties['KELURAHA_1']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <th scope="row">Nama Petugas</th>\
-                        <td>' + (feature.properties['Nama_Petug'] !== null ? autolinker.link(String(feature.properties['Nama_Petug']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <th scope="row">Nomor Telepon</th>\
-                        <td>' + (feature.properties['Nomor_Tele'] !== null ? autolinker.link(String(feature.properties['Nomor_Tele']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <th scope="row">Alas Hak</th>\
-                        <td>' + (feature.properties['Alas_Hak'] !== null ? autolinker.link(String(feature.properties['Alas_Hak']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <td colspan="2">' + (feature.properties['X'] !== null ? autolinker.link(String(feature.properties['X']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                    <tr>\
-                        <td colspan="2">' + (feature.properties['Y'] !== null ? autolinker.link(String(feature.properties['Y']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
-                    </tr>\
-                </table>';
+                        <tr>\
+                            <td colspan="2">' + (feature.properties['OBJECTID'] !== null ? autolinker.link(String(feature.properties['OBJECTID']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <td colspan="2">' + (feature.properties['name'] !== null ? autolinker.link(String(feature.properties['name']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <td colspan="2">' + (feature.properties['NO'] !== null ? autolinker.link(String(feature.properties['NO']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <th scope="row">Nama</th>\
+                            <td>' + (feature.properties['NAMA'] !== null ? autolinker.link(String(feature.properties['NAMA']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <th scope="row">Alamat</th>\
+                            <td>' + (feature.properties['ALAMAT'] !== null ? autolinker.link(String(feature.properties['ALAMAT']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <th scope="row">Koordinat</th>\
+                            <td>' + (feature.properties['KOORDINAT'] !== null ? autolinker.link(String(feature.properties['KOORDINAT']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <th scope="row">Jenis Rumah Ibadah</th>\
+                            <td>' + (feature.properties['JENIS_TEMP'] !== null ? autolinker.link(String(feature.properties['JENIS_TEMP']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <th scope="row">Kecamatan</th>\
+                            <td>' + (feature.properties['KECAMATAN'] !== null ? autolinker.link(String(feature.properties['KECAMATAN']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <th scope="row">Kelurahan</th>\
+                            <td>' + (feature.properties['KELURAHAN'] !== null ? autolinker.link(String(feature.properties['KELURAHAN']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <td colspan="2">' + (feature.properties['TELEPON'] !== null ? autolinker.link(String(feature.properties['TELEPON']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <th scope="row">Foto</th>\
+                            <td>' + (feature.properties['Foto'] !== null ? '<img src="images/' + String(feature.properties['Foto']).replace(/[\\/:]/g, '_').trim().replace(/'/g, '\'').replace(/"/g, '&quot;') + '">' : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <td colspan="2">' + (feature.properties['NO_1'] !== null ? autolinker.link(String(feature.properties['NO_1']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <td colspan="2">' + (feature.properties['NAMA_1'] !== null ? autolinker.link(String(feature.properties['NAMA_1']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <td colspan="2">' + (feature.properties['ALAMAT_1'] !== null ? autolinker.link(String(feature.properties['ALAMAT_1']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <td colspan="2">' + (feature.properties['KOORDINA_1'] !== null ? autolinker.link(String(feature.properties['KOORDINA_1']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <td colspan="2">' + (feature.properties['JENIS_TE_1'] !== null ? autolinker.link(String(feature.properties['JENIS_TE_1']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <td colspan="2">' + (feature.properties['KECAMATA_1'] !== null ? autolinker.link(String(feature.properties['KECAMATA_1']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <td colspan="2">' + (feature.properties['KELURAHA_1'] !== null ? autolinker.link(String(feature.properties['KELURAHA_1']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <th scope="row">Nama Petugas</th>\
+                            <td>' + (feature.properties['Nama_Petug'] !== null ? autolinker.link(String(feature.properties['Nama_Petug']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <th scope="row">Nomor Telepon</th>\
+                            <td>' + (feature.properties['Nomor_Tele'] !== null ? autolinker.link(String(feature.properties['Nomor_Tele']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <th scope="row">Alas Hak</th>\
+                            <td>' + (feature.properties['Alas_Hak'] !== null ? autolinker.link(String(feature.properties['Alas_Hak']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <td colspan="2">' + (feature.properties['X'] !== null ? autolinker.link(String(feature.properties['X']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                        <tr>\
+                            <td colspan="2">' + (feature.properties['Y'] !== null ? autolinker.link(String(feature.properties['Y']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                        </tr>\
+                    </table>';
             var content = removeEmptyRowsFromPopupContent(popupContent, feature);
-			layer.on('popupopen', function(e) {
-				addClassToPopupIfMedia(content, e.popup);
-			});
-			layer.bindPopup(content, { maxHeight: 400 });
+            layer.on('popupopen', function(e) {
+                addClassToPopupIfMedia(content, e.popup);
+            });
+            layer.bindPopup(content, { maxHeight: 400 });
         }
-
         function style_RumahIbadah_3_0(feature) {
-            // Gunakan ikon default jika file ikon tidak tersedia
             var iconUrl = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png';
             var iconSize = [25, 41];
             var iconAnchor = [12, 41];
             
             switch(String(feature.properties['JENIS_TEMP'])) {
                 case 'Gereja':
-                    // Coba gunakan ikon kustom, fallback ke default
                     try {
                         iconUrl = 'markers/RumahIbadah_Gereja.svg';
                         iconSize = [15.2, 15.2];
@@ -352,75 +410,114 @@
         });
         bounds_group.addLayer(layer_RumahIbadah_3);
         map.addLayer(layer_RumahIbadah_3);
-        const url = {"Nominatim": "https://nominatim.openstreetmap.org/search?format=geojson&addressdetails=1&",
-        "BAN": "https://api-adresse.data.gouv.fr/search/?"}
-        var photonControl = L.control.photon({
-            url: url["Nominatim"],
-            feedbackLabel: '',
-            position: 'topleft',
-            includePosition: true,
-            initial: true,
-            // resultsHandler: myHandler,
-        }).addTo(map);
-        photonControl._container.childNodes[0].style.borderRadius="10px"
-        // Create a variable to store the geoJSON data
-        var x = null;
-        // Create a variable to store the marker
-        var marker = null;
-        // Add an event listener to the Photon control to create a marker from the returned geoJSON data
-        var z = null;
-        photonControl.on('selected', function(e) {
-            console.log(photonControl.search.resultsContainer);
-            if (x != null) {
-                map.removeLayer(obj3.marker);
-                map.removeLayer(x);
-            }
-            obj2.gcd = e.choice;
-            x = L.geoJSON(obj2.gcd).addTo(map);
-            var label = typeof obj2.gcd.properties.label === 'undefined' ? obj2.gcd.properties.display_name : obj2.gcd.properties.label;
-            obj3.marker = L.marker(x.getLayers()[0].getLatLng()).bindPopup(label).addTo(map);
-            map.setView(x.getLayers()[0].getLatLng(), 17);
-            z = typeof e.choice.properties.label === 'undefined'? e.choice.properties.display_name : e.choice.properties.label;
-            console.log(e);
-            e.target.input.value = z;
-        });
-        var search = document.getElementsByClassName("leaflet-photon leaflet-control")[0];
-        search.classList.add("leaflet-control-search")
-        search.style.display = "flex";
-        search.style.backgroundColor="rgba(255,255,255,0.5)" 
 
-        // Créer le nouvel élément bouton
-        var button = document.createElement("div");
-        button.id = "gcd-button-control";
-        button.className = "gcd-gl-btn fa fa-search search-button";
+        // --- Bagian yang Diubah dan Ditambahkan ---
 
-        // Ajouter le bouton à l'élément parent
-        search.insertBefore(button, search.firstChild);
-        last = search.lastChild;
-        last.style.display = "none";
-        button.addEventListener("click", function (e) {
-            if (last.style.display === "none") {
-                last.style.display = "block";
-            } else {
-                last.style.display = "none";
-            }
-        });
+        // Menghapus elemen pencarian Photon yang lama
+        var oldSearch = document.getElementsByClassName("leaflet-photon")[0];
+        if (oldSearch) {
+            oldSearch.parentNode.removeChild(oldSearch);
+        }
+
         var overlaysTree = [
             {label: 'Rumah Ibadah<br /><table><tr><td style="text-align: center;"><img src="legend/RumahIbadah_3_Gereja0.png" /></td><td>Gereja</td></tr><tr><td style="text-align: center;"><img src="legend/RumahIbadah_3_GerejaKatolik1.png" /></td><td>Gereja Katolik</td></tr><tr><td style="text-align: center;"><img src="legend/RumahIbadah_3_Klenteng2.png" /></td><td>Klenteng</td></tr><tr><td style="text-align: center;"><img src="legend/RumahIbadah_3_Masjid3.png" /></td><td>Masjid</td></tr><tr><td style="text-align: center;"><img src="legend/RumahIbadah_3_Musholla4.png" /></td><td>Musholla</td></tr><tr><td style="text-align: center;"><img src="legend/RumahIbadah_3_Pura5.png" /></td><td>Pura</td></tr><tr><td style="text-align: center;"><img src="legend/RumahIbadah_3_Vihara6.png" /></td><td>Vihara</td></tr></table>', layer: layer_RumahIbadah_3},
             {label: "Google Satellite", layer: layer_GoogleSatellite_2, radioGroup: 'bm' },
             {label: "Google Road", layer: layer_GoogleRoad_1, radioGroup: 'bm' },
-            {label: "Positron", layer: layer_Positron_0, radioGroup: 'bm' },]
+            {label: "Positron", layer: layer_Positron_0, radioGroup: 'bm' },
+        ]
         var lay = L.control.layers.tree(null, overlaysTree,{
-            //namedToggle: true,
-            //selectorBack: false,
-            //closedSymbol: '&#8862; &#x1f5c0;',
-            //openedSymbol: '&#8863; &#x1f5c1;',
-            //collapseAll: 'Collapse all',
-            //expandAll: 'Expand all',
             collapsed: true,
         });
         lay.addTo(map);
         setBounds();
+
+        // Variabel global untuk marker pencarian baru
+        let searchMarker = null;
+
+        // Inisialisasi Google Autocomplete
+        const input = document.getElementById('search-input');
+        const autocomplete = new google.maps.places.Autocomplete(input);
+
+        // Menangani pemilihan dari autocomplete
+        autocomplete.addListener('place_changed', () => {
+            const place = autocomplete.getPlace();
+
+            if (!place.geometry) {
+                console.error("Return dari Google Places tidak memiliki geometri.");
+                return;
+            }
+
+            // Hapus marker pencarian sebelumnya jika ada
+            if (searchMarker) {
+                map.removeLayer(searchMarker);
+            }
+
+            const lat = place.geometry.location.lat();
+            const lng = place.geometry.location.lng();
+            const latlng = [lat, lng];
+
+            // Tambahkan marker baru dan geser peta ke lokasi tersebut
+            searchMarker = L.marker(latlng).addTo(map)
+                .bindPopup('<b>' + place.name + '</b><br>' + place.formatted_address)
+                .openPopup();
+            map.setView(latlng, 17);
+        });
+
+        // Menangani pencarian koordinat manual
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault(); // Mencegah form submit
+                const value = input.value.trim();
+                const coords = value.split(',').map(c => parseFloat(c.trim()));
+
+                if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
+                    const lat = coords[0];
+                    const lng = coords[1];
+                    const latlng = [lat, lng];
+
+                    // Hapus marker pencarian sebelumnya jika ada
+                    if (searchMarker) {
+                        map.removeLayer(searchMarker);
+                    }
+
+                    // Tambahkan marker baru dan geser peta ke lokasi tersebut
+                    searchMarker = L.marker(latlng).addTo(map)
+                        .bindPopup('Koordinat: ' + lat + ', ' + lng)
+                        .openPopup();
+                    map.setView(latlng, 17);
+                }
+            }
+        });
+
+        // Membuat card pencarian bisa digeser (draggable)
+        const searchCard = document.getElementById('search-card');
+        const handle = searchCard.querySelector('.card-handle');
+        let isDragging = false;
+        let startX, startY, startLeft, startTop;
+
+        handle.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            startLeft = searchCard.offsetLeft;
+            startTop = searchCard.offsetTop;
+            searchCard.style.cursor = 'grabbing';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            
+            searchCard.style.left = (startLeft + dx) + 'px';
+            searchCard.style.top = (startTop + dy) + 'px';
+            searchCard.style.transform = 'none';
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+            searchCard.style.cursor = 'grab';
+        });
         </script>
     </body>
 </html>
