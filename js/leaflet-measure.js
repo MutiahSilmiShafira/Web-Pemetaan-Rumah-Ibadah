@@ -4003,7 +4003,7 @@ i18n.prototype = {
 				console.log('creating locales dir in: ' + this.directory);
 			}
 
-			fs.mkdirSync(this.directory, 0755);
+			fs.mkdirSync(this.directory, 0o755);
 		}
 
 		// Initialize the locale if didn't exist already
