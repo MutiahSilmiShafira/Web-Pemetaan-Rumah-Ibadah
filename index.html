@@ -16,7 +16,7 @@
         <link rel="stylesheet" href="css/leaflet-search.css">
         <link rel="stylesheet" href="css/leaflet.photon.css">
         <link rel="stylesheet" href="css/leaflet-measure.css">
-        <!-- Fallback CSS untuk Leaflet (dari CDN jika file lokal tidak tersedia) -->
+        <!-- Fallback CSS untuk Leaflet -->
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.css" />
 
         <style>
@@ -26,6 +26,7 @@
                 padding: 0;
                 margin: 0;
             }
+            
             .search-card {
                 position: absolute;
                 top: 10px;
@@ -35,38 +36,37 @@
                 background-color: white;
                 padding: 10px;
                 border-radius: 8px;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.1);
                 width: 90%;
                 max-width: 400px;
                 display: flex;
                 flex-direction: column;
                 align-items: center;
             }
+            
             .search-input-container {
                 width: 100%;
                 position: relative;
             }
+            
             #search-input {
                 width: 100%;
-                padding: 10px;
+                padding: 10px 10px 10px 40px;
                 border: 1px solid #ccc;
                 border-radius: 5px;
                 font-size: 16px;
                 box-sizing: border-box;
-                padding-left: 40px;
                 background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352a144 144 0 1 0 0-288 144 144 0 1 0 0 288z" fill="%23666666"/></svg>');
                 background-repeat: no-repeat;
                 background-position: 10px center;
                 background-size: 20px;
             }
+            
             #search-input:focus {
                 outline: none;
                 border-color: #4285F4;
             }
-            @media (max-width: 600px) {
-                .search-card {
-                    width: 95%;
-                }
-            }
+            
             .card-handle {
                 width: 50px;
                 height: 5px;
@@ -75,6 +75,7 @@
                 margin-bottom: 10px;
                 cursor: grab;
             }
+            
             .search-results {
                 position: absolute;
                 top: 100%;
@@ -89,16 +90,32 @@
                 display: none;
                 z-index: 10000;
             }
+            
             .search-result-item {
                 padding: 8px 12px;
                 cursor: pointer;
                 border-bottom: 1px solid #eee;
             }
+            
             .search-result-item:hover {
                 background: #f5f5f5;
             }
+            
             .search-result-item:last-child {
                 border-bottom: none;
+            }
+            
+            .coordinate-hint {
+                font-size: 11px;
+                color: #888;
+                margin-top: 5px;
+                text-align: center;
+            }
+            
+            @media (max-width: 600px) {
+                .search-card {
+                    width: 95%;
+                }
             }
         </style>
     </head>
@@ -107,13 +124,17 @@
         <div id="search-card" class="search-card">
             <div class="card-handle"></div>
             <div class="search-input-container">
-                <input id="search-input" type="text" placeholder="Cari nama rumah ibadah atau lokasi..." autocomplete="off">
+                <input id="search-input" type="text" placeholder="Cari nama, lokasi, atau koordinat (lat,lng)..." autocomplete="off">
                 <div id="searchResults" class="search-results"></div>
+            </div>
+            <div class="coordinate-hint">
+                Contoh koordinat: -7.2575,112.7521 atau lat:-7.2575,lng:112.7521
             </div>
         </div>
         
         <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB2lwdS5wB2neO4JcEkSYjyvI9t1K4KYIs&libraries=places&loading=async"></script>
         
+        <!-- QGIS2Web Scripts -->
         <script src="js/qgis2web_expressions.js"></script>
         <script src="js/leaflet.js"></script>
         <script src="js/L.Control.Layers.Tree.min.js"></script>
@@ -130,20 +151,19 @@
         <script src="js/proj4.js"></script>
         <script src="js/proj4leaflet.js"></script>
         
-        <!-- Fallback untuk Leaflet jika file lokal tidak tersedia -->
+        <!-- Fallback Leaflet -->
         <script>
             if (typeof L === 'undefined') {
                 document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js"><\/script>');
             }
         </script>
         
-        <!-- Script untuk memuat data rumah ibadah - ganti dengan file data Anda -->
+        <!-- Data Rumah Ibadah -->
         <script src="data/RumahIbadah_3.js"></script>
         
-        <!-- Fallback jika data tidak tersedia -->
+        <!-- Fallback Data -->
         <script>
             if (typeof json_RumahIbadah_3 === 'undefined') {
-                // Data sample jika file asli tidak ditemukan
                 var json_RumahIbadah_3 = {
                     "type": "FeatureCollection",
                     "features": [
@@ -171,117 +191,136 @@
         </script>
 
         <script>
-            // Variabel global
+            // ================= VARIABEL GLOBAL =================
+            var map;
             var highlightLayer;
             var currentSearchMarker = null;
             var allFeatures = [];
-            
-            // Fungsionalitas highlight feature yang diperbaiki
-            function highlightFeature(e) {
-                highlightLayer = e.target;
-                if (highlightLayer.feature.geometry.type === 'Point') {
-                    // Simpan icon asli
-                    if (!highlightLayer.originalIcon) {
-                        highlightLayer.originalIcon = highlightLayer.options.icon;
-                    }
-                    // Gunakan icon highlight
-                    const highlightedIcon = L.icon({
-                        iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-red.png',
-                        iconSize: [25, 41],
-                        iconAnchor: [12, 41],
-                        popupAnchor: [1, -34],
-                    });
-                    highlightLayer.setIcon(highlightedIcon);
-                } else {
-                    // Kode untuk poligon/polyline tetap sama
-                    highlightLayer.setStyle({
-                        color: '#ffff00',
-                        fillColor: '#ffff00',
-                        fillOpacity: 1
-                    });
-                }
-            }
-            
-            function resetHighlight(e) {
-                var layer = e.target;
-                if (layer.feature.geometry.type === 'Point') {
-                    // Kembalikan ke icon asli
-                    if (layer.originalIcon) {
-                        layer.setIcon(layer.originalIcon);
-                    } else {
-                        layer.setIcon(style_RumahIbadah_3_0(layer.feature).icon);
-                    }
-                } else {
-                    // Reset style untuk poligon/polyline
-                    for (var i in layer._eventParents) {
-                        if (typeof layer._eventParents[i].resetStyle === 'function') {
-                            layer._eventParents[i].resetStyle(layer);
-                        }
-                    }
-                }
-            }
-            
-            // Gunakan CRS yang lebih sederhana untuk Surabaya
-            var map = L.map('map', {
-                zoomControl: false,
-                maxZoom: 28,
-                minZoom: 1
-            }).setView([-7.2575, 112.7521], 12); // Center koordinat Surabaya
-            
-            var hash = new L.Hash(map);
-            map.attributionControl.setPrefix('<a href="https://github.com/tomchadwin/qgis2web" target="_blank">qgis2web</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; <a href="https://qgis.org">QGIS</a>');
             var autolinker = new Autolinker({truncate: {length: 30, location: 'smart'}});
             
-            // Fungsi utilitas untuk pop-up
-            function removeEmptyRowsFromPopupContent(content, feature) {
-                var tempDiv = document.createElement('div');
-                tempDiv.innerHTML = content;
-                var rows = tempDiv.querySelectorAll('tr');
-                for (var i = 0; i < rows.length; i++) {
-                    var td = rows[i].querySelector('td.visible-with-data');
-                    var key = td ? td.id : '';
-                    if (td && td.classList.contains('visible-with-data') && feature.properties[key] == null) {
-                        rows[i].parentNode.removeChild(rows[i]);
-                    }
-                }
-                return tempDiv.innerHTML;
+            // ================= INISIALISASI PETA =================
+            function initializeMap() {
+                map = L.map('map', {
+                    zoomControl: false,
+                    maxZoom: 28,
+                    minZoom: 1
+                }).setView([-7.2575, 112.7521], 12);
+                
+                var hash = new L.Hash(map);
+                map.attributionControl.setPrefix('<a href="https://github.com/tomchadwin/qgis2web" target="_blank">qgis2web</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; <a href="https://qgis.org">QGIS</a>');
             }
             
-            function addClassToPopupIfMedia(content, popup) {
-                var tempDiv = document.createElement('div');
-                tempDiv.innerHTML = content;
-                if (tempDiv.querySelector('td img')) {
-                    popup._contentNode.classList.add('media');
-                    setTimeout(function() { popup.update(); }, 10);
-                } else {
-                    popup._contentNode.classList.remove('media');
-                }
-            }
-            
-            // Fungsi pop-up untuk layer rumah ibadah
-            function pop_RumahIbadah_3(feature, layer) { 
-                layer.on({
-                    mouseout: resetHighlight,
-                    mouseover: highlightFeature,
+            // ================= LAYER PETA =================
+            function initializeLayers() {
+                // Base Layers
+                map.createPane('pane_Positron_0');
+                map.getPane('pane_Positron_0').style.zIndex = 400;
+                var layer_Positron_0 = L.tileLayer('https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', { 
+                    pane: 'pane_Positron_0', 
+                    opacity: 1.0, 
+                    attribution: '<a href="https://cartodb.com/basemaps/">Map tiles by CartoDB, under CC BY 3.0. Data by OpenStreetMap, under ODbL.</a>', 
+                    minZoom: 1, 
+                    maxZoom: 28, 
+                    minNativeZoom: 0, 
+                    maxNativeZoom: 20
+                });
+                map.addLayer(layer_Positron_0);
+
+                map.createPane('pane_GoogleRoad_1');
+                map.getPane('pane_GoogleRoad_1').style.zIndex = 401;
+                var layer_GoogleRoad_1 = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+                    pane: 'pane_GoogleRoad_1', 
+                    opacity: 1.0, 
+                    attribution: '<a href="https://www.google.at/permissions/geoguidelines/attr-guide.html">Map data ©2015 Google</a>', 
+                    minZoom: 1, 
+                    maxZoom: 28, 
+                    minNativeZoom: 0, 
+                    maxNativeZoom: 20
                 });
                 
-                var popupContent = '<table>' + 
-                    '<tr><th scope="row">Nama</th><td>' + (feature.properties['NAMA'] !== null ? autolinker.link(String(feature.properties['NAMA']).replace(/'/g, '\'').toLocaleString()) : '') + '</td></tr>' + 
-                    '<tr><th scope="row">Alamat</th><td>' + (feature.properties['ALAMAT'] !== null ? autolinker.link(String(feature.properties['ALAMAT']).replace(/'/g, '\'').toLocaleString()) : '') + '</td></tr>' +
-                    '<tr><th scope="row">Koordinat</th><td>' + (feature.properties['KOORDINAT'] !== null ? autolinker.link(String(feature.properties['KOORDINAT']).replace(/'/g, '\'').toLocaleString()) : '') + '</td></tr>' +
-                    '<tr><th scope="row">Jenis Rumah Ibadah</th><td>' + (feature.properties['JENIS_TEMP'] !== null ? autolinker.link(String(feature.properties['JENIS_TEMP']).replace(/'/g, '\'').toLocaleString()) : '') + '</td></tr>' +
-                    '<tr><th scope="row">Kecamatan</th><td>' + (feature.properties['KECAMATAN'] !== null ? autolinker.link(String(feature.properties['KECAMATAN']).replace(/'/g, '\'').toLocaleString()) : '') + '</td></tr>' +
-                    '<tr><th scope="row">Kelurahan</th><td>' + (feature.properties['KELURAHAN'] !== null ? autolinker.link(String(feature.properties['KELURAHAN']).replace(/'/g, '\'').toLocaleString()) : '') + '</td></tr>' +
-                    '<tr><th scope="row">Telepon</th><td>' + (feature.properties['TELEPON'] !== null ? autolinker.link(String(feature.properties['TELEPON']).replace(/'/g, '\'').toLocaleString()) : '') + '</td></tr>' +
-                    '<tr><th scope="row">Foto</th><td>' + (feature.properties['Foto'] !== null ? '<img src="images/' + String(feature.properties['Foto']).replace(/[\\/:]/g, '_').trim().replace(/'/g, '\'').replace(/"/g, '&quot;') + '" style="max-width: 200px; height: auto;">' : '') + '</td></tr>' +
-                    '</table>';
-                var content = removeEmptyRowsFromPopupContent(popupContent, feature);
-                layer.on('popupopen', function(e) { addClassToPopupIfMedia(content, e.popup); });
-                layer.bindPopup(content, { maxHeight: 400 });
-            }
+                map.createPane('pane_GoogleSatellite_2');
+                map.getPane('pane_GoogleSatellite_2').style.zIndex = 402;
+                var layer_GoogleSatellite_2 = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                    pane: 'pane_GoogleSatellite_2', 
+                    opacity: 1.0, 
+                    attribution: '<a href="https://www.google.at/permissions/geoguidelines/attr-guide.html">Map data ©2015 Google</a>', 
+                    minZoom: 1, 
+                    maxZoom: 28, 
+                    minNativeZoom: 0, 
+                    maxNativeZoom: 20
+                });
+                
+                // Rumah Ibadah Layer
+                map.createPane('pane_RumahIbadah_3');
+                map.getPane('pane_RumahIbadah_3').style.zIndex = 403;
+                map.getPane('pane_RumahIbadah_3').style['mix-blend-mode'] = 'normal';
+                
+                var layer_RumahIbadah_3 = new L.geoJson(json_RumahIbadah_3, {
+                    attribution: '',
+                    interactive: true,
+                    dataVar: 'json_RumahIbadah_3',
+                    layerName: 'layer_RumahIbadah_3',
+                    pane: 'pane_RumahIbadah_3',
+                    onEachFeature: function(feature, layer) {
+                        allFeatures.push({ feature: feature, layer: layer });
+                        setupPopup(feature, layer);
+                    },
+                    pointToLayer: function (feature, latlng) {
+                        return L.marker(latlng, getMarkerStyle(feature));
+                    },
+                });
+                map.addLayer(layer_RumahIbadah_3);
 
-            // Fungsi style untuk layer rumah ibadah dengan fallback icon
-            function style_RumahIbadah_3_0(feature) {
+                // Layer Controls
+                var overlaysTree = [
+                    {label: 'Rumah Ibadah<br /><table><tr><td style="text-align: center;"><img src="legend/RumahIbadah_3_Gereja0.png" /></td><td>Gereja</td></tr><tr><td style="text-align: center;"><img src="legend/RumahIbadah_3_GerejaKatolik1.png" /></td><td>Gereja Katolik</td></tr><tr><td style="text-align: center;"><img src="legend/RumahIbadah_3_Klenteng2.png" /></td><td>Klenteng</td></tr><tr><td style="text-align: center;"><img src="legend/RumahIbadah_3_Masjid3.png" /></td><td>Masjid</td></tr><tr><td style="text-align: center;"><img src="legend/RumahIbadah_3_Musholla4.png" /></td><td>Musholla</td></tr><tr><td style="text-align: center;"><img src="legend/RumahIbadah_3_Pura5.png" /></td><td>Pura</td></tr><tr><td style="text-align: center;"><img src="legend/RumahIbadah_3_Vihara6.png" /></td><td>Vihara</td></tr></table>', layer: layer_RumahIbadah_3},
+                    {label: "Google Satellite", layer: layer_GoogleSatellite_2, radioGroup: 'bm' },
+                    {label: "Google Road", layer: layer_GoogleRoad_1, radioGroup: 'bm' },
+                    {label: "Positron", layer: layer_Positron_0, radioGroup: 'bm' },
+                ];
+                
+                try {
+                    var lay = L.control.layers.tree(null, overlaysTree, { collapsed: true });
+                    lay.addTo(map);
+                } catch(e) {
+                    var baseLayers = {
+                        "Positron": layer_Positron_0,
+                        "Google Road": layer_GoogleRoad_1,
+                        "Google Satellite": layer_GoogleSatellite_2
+                    };
+                    var overlayLayers = {
+                        "Rumah Ibadah": layer_RumahIbadah_3
+                    };
+                    L.control.layers(baseLayers, overlayLayers).addTo(map);
+                }
+
+                // Set bounds
+                var bounds_group = new L.featureGroup([layer_RumahIbadah_3]);
+                if (bounds_group.getLayers().length) {
+                    map.fitBounds(bounds_group.getBounds(), {padding: [20, 20]});
+                }
+            }
+            
+            // ================= KONTROL PETA =================
+            function initializeControls() {
+                L.control.zoom({ position: 'topleft' }).addTo(map);
+                
+                try {
+                    L.control.locate({ locateOptions: { maxZoom: 19 } }).addTo(map);
+                } catch(e) {
+                    console.warn('Control locate tidak tersedia');
+                }
+                
+                try {
+                    var measureControl = new L.Control.Measure({ position: 'topleft' });
+                    measureControl.addTo(map);
+                } catch(e) {
+                    console.warn('Measure control tidak tersedia');
+                }
+            }
+            
+            // ================= STYLING MARKER (TANPA SHADOW) =================
+            function getMarkerStyle(feature) {
                 var iconUrl = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png';
                 var iconSize = [25, 41];
                 var iconAnchor = [12, 41];
@@ -332,135 +371,165 @@
                         iconUrl: iconUrl,
                         iconSize: iconSize,
                         iconAnchor: iconAnchor,
-                        popupAnchor: [0, -iconAnchor[1]],
+                        popupAnchor: [0, -iconAnchor[1]]
+                        // shadowUrl dihapus untuk menghilangkan bayangan
+                        // shadowSize dihapus untuk menghilangkan bayangan
                     }),
                     interactive: true,
                 };
             }
+            
+            // ================= POPUP DAN HIGHLIGHT =================
+            function setupPopup(feature, layer) {
+                layer.on({
+                    mouseout: resetHighlight,
+                    mouseover: highlightFeature,
+                });
+                
+                var popupContent = '<table>' + 
+                    '<tr><th scope="row">Nama</th><td>' + (feature.properties['NAMA'] !== null ? autolinker.link(String(feature.properties['NAMA']).replace(/'/g, '\'').toLocaleString()) : '') + '</td></tr>' + 
+                    '<tr><th scope="row">Alamat</th><td>' + (feature.properties['ALAMAT'] !== null ? autolinker.link(String(feature.properties['ALAMAT']).replace(/'/g, '\'').toLocaleString()) : '') + '</td></tr>' +
+                    '<tr><th scope="row">Koordinat</th><td>' + (feature.properties['KOORDINAT'] !== null ? autolinker.link(String(feature.properties['KOORDINAT']).replace(/'/g, '\'').toLocaleString()) : '') + '</td></tr>' +
+                    '<tr><th scope="row">Jenis Rumah Ibadah</th><td>' + (feature.properties['JENIS_TEMP'] !== null ? autolinker.link(String(feature.properties['JENIS_TEMP']).replace(/'/g, '\'').toLocaleString()) : '') + '</td></tr>' +
+                    '<tr><th scope="row">Kecamatan</th><td>' + (feature.properties['KECAMATAN'] !== null ? autolinker.link(String(feature.properties['KECAMATAN']).replace(/'/g, '\'').toLocaleString()) : '') + '</td></tr>' +
+                    '<tr><th scope="row">Kelurahan</th><td>' + (feature.properties['KELURAHAN'] !== null ? autolinker.link(String(feature.properties['KELURAHAN']).replace(/'/g, '\'').toLocaleString()) : '') + '</td></tr>' +
+                    '<tr><th scope="row">Telepon</th><td>' + (feature.properties['TELEPON'] !== null ? autolinker.link(String(feature.properties['TELEPON']).replace(/'/g, '\'').toLocaleString()) : '') + '</td></tr>' +
+                    '<tr><th scope="row">Foto</th><td>' + (feature.properties['Foto'] !== null ? '<img src="images/' + String(feature.properties['Foto']).replace(/[\\/:]/g, '_').trim().replace(/'/g, '\'').replace(/"/g, '&quot;') + '" style="max-width: 200px; height: auto;">' : '') + '</td></tr>' +
+                    '</table>';
+                
+                var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+                layer.on('popupopen', function(e) { addClassToPopupIfMedia(content, e.popup); });
+                layer.bindPopup(content, { maxHeight: 400 });
+            }
 
-            // Inisialisasi layer peta
-            map.createPane('pane_Positron_0');
-            map.getPane('pane_Positron_0').style.zIndex = 400;
-            var layer_Positron_0 = L.tileLayer('https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', { 
-                pane: 'pane_Positron_0', 
-                opacity: 1.0, 
-                attribution: '<a href="https://cartodb.com/basemaps/">Map tiles by CartoDB, under CC BY 3.0. Data by OpenStreetMap, under ODbL.</a>', 
-                minZoom: 1, 
-                maxZoom: 28, 
-                minNativeZoom: 0, 
-                maxNativeZoom: 20
-            });
-            map.addLayer(layer_Positron_0);
-
-            map.createPane('pane_GoogleRoad_1');
-            map.getPane('pane_GoogleRoad_1').style.zIndex = 401;
-            var layer_GoogleRoad_1 = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
-                pane: 'pane_GoogleRoad_1', 
-                opacity: 1.0, 
-                attribution: '<a href="https://www.google.at/permissions/geoguidelines/attr-guide.html">Map data ©2015 Google</a>', 
-                minZoom: 1, 
-                maxZoom: 28, 
-                minNativeZoom: 0, 
-                maxNativeZoom: 20
-            });
-            
-            map.createPane('pane_GoogleSatellite_2');
-            map.getPane('pane_GoogleSatellite_2').style.zIndex = 402;
-            var layer_GoogleSatellite_2 = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-                pane: 'pane_GoogleSatellite_2', 
-                opacity: 1.0, 
-                attribution: '<a href="https://www.google.at/permissions/geoguidelines/attr-guide.html">Map data ©2015 Google</a>', 
-                minZoom: 1, 
-                maxZoom: 28, 
-                minNativeZoom: 0, 
-                maxNativeZoom: 20
-            });
-            
-            map.createPane('pane_RumahIbadah_3');
-            map.getPane('pane_RumahIbadah_3').style.zIndex = 403;
-            map.getPane('pane_RumahIbadah_3').style['mix-blend-mode'] = 'normal';
-            
-            var layer_RumahIbadah_3 = new L.geoJson(json_RumahIbadah_3, {
-                attribution: '',
-                interactive: true,
-                dataVar: 'json_RumahIbadah_3',
-                layerName: 'layer_RumahIbadah_3',
-                pane: 'pane_RumahIbadah_3',
-                onEachFeature: function(feature, layer) {
-                    allFeatures.push({ feature: feature, layer: layer });
-                    pop_RumahIbadah_3(feature, layer);
-                },
-                pointToLayer: function (feature, latlng) {
-                    var marker = L.marker(latlng, style_RumahIbadah_3_0(feature));
-                    return marker;
-                },
-            });
-            map.addLayer(layer_RumahIbadah_3);
-
-            var bounds_group = new L.featureGroup([]);
-            bounds_group.addLayer(layer_RumahIbadah_3);
-            
-            function setBounds() {
-                if (bounds_group.getLayers().length) {
-                    map.fitBounds(bounds_group.getBounds(), {padding: [20, 20]});
+            function highlightFeature(e) {
+                highlightLayer = e.target;
+                if (highlightLayer.feature.geometry.type === 'Point') {
+                    if (!highlightLayer.originalIcon) {
+                        highlightLayer.originalIcon = highlightLayer.options.icon;
+                    }
+                    const highlightedIcon = L.icon({
+                        iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-red.png',
+                        iconSize: [25, 41],
+                        iconAnchor: [12, 41],
+                        popupAnchor: [1, -34]
+                        // shadowUrl dihapus untuk menghilangkan bayangan
+                        // shadowSize dihapus untuk menghilangkan bayangan
+                    });
+                    highlightLayer.setIcon(highlightedIcon);
+                } else {
+                    highlightLayer.setStyle({
+                        color: '#ffff00',
+                        fillColor: '#ffff00',
+                        fillOpacity: 1
+                    });
                 }
             }
-
-            L.control.zoom({ position: 'topleft' }).addTo(map);
             
-            // Control locate dengan error handling
-            try {
-                L.control.locate({ locateOptions: { maxZoom: 19 } }).addTo(map);
-            } catch(e) {
-                console.warn('Control locate tidak tersedia');
+            function resetHighlight(e) {
+                var layer = e.target;
+                if (layer.feature.geometry.type === 'Point') {
+                    if (layer.originalIcon) {
+                        layer.setIcon(layer.originalIcon);
+                    } else {
+                        layer.setIcon(getMarkerStyle(layer.feature).icon);
+                    }
+                } else {
+                    for (var i in layer._eventParents) {
+                        if (typeof layer._eventParents[i].resetStyle === 'function') {
+                            layer._eventParents[i].resetStyle(layer);
+                        }
+                    }
+                }
             }
             
-            // Measure control dengan error handling
-            try {
-                var measureControl = new L.Control.Measure({ position: 'topleft' });
-                measureControl.addTo(map);
-            } catch(e) {
-                console.warn('Measure control tidak tersedia');
+            // ================= UTILITAS POPUP =================
+            function removeEmptyRowsFromPopupContent(content, feature) {
+                var tempDiv = document.createElement('div');
+                tempDiv.innerHTML = content;
+                var rows = tempDiv.querySelectorAll('tr');
+                for (var i = 0; i < rows.length; i++) {
+                    var td = rows[i].querySelector('td.visible-with-data');
+                    var key = td ? td.id : '';
+                    if (td && td.classList.contains('visible-with-data') && feature.properties[key] == null) {
+                        rows[i].parentNode.removeChild(rows[i]);
+                    }
+                }
+                return tempDiv.innerHTML;
             }
-
-            var overlaysTree = [
-                {label: 'Rumah Ibadah<br /><table><tr><td style="text-align: center;"><img src="legend/RumahIbadah_3_Gereja0.png" /></td><td>Gereja</td></tr><tr><td style="text-align: center;"><img src="legend/RumahIbadah_3_GerejaKatolik1.png" /></td><td>Gereja Katolik</td></tr><tr><td style="text-align: center;"><img src="legend/RumahIbadah_3_Klenteng2.png" /></td><td>Klenteng</td></tr><tr><td style="text-align: center;"><img src="legend/RumahIbadah_3_Masjid3.png" /></td><td>Masjid</td></tr><tr><td style="text-align: center;"><img src="legend/RumahIbadah_3_Musholla4.png" /></td><td>Musholla</td></tr><tr><td style="text-align: center;"><img src="legend/RumahIbadah_3_Pura5.png" /></td><td>Pura</td></tr><tr><td style="text-align: center;"><img src="legend/RumahIbadah_3_Vihara6.png" /></td><td>Vihara</td></tr></table>', layer: layer_RumahIbadah_3},
-                {label: "Google Satellite", layer: layer_GoogleSatellite_2, radioGroup: 'bm' },
-                {label: "Google Road", layer: layer_GoogleRoad_1, radioGroup: 'bm' },
-                {label: "Positron", layer: layer_Positron_0, radioGroup: 'bm' },
-            ];
             
-            try {
-                var lay = L.control.layers.tree(null, overlaysTree, { collapsed: true });
-                lay.addTo(map);
-            } catch(e) {
-                // Fallback ke layer control biasa
-                var baseLayers = {
-                    "Positron": layer_Positron_0,
-                    "Google Road": layer_GoogleRoad_1,
-                    "Google Satellite": layer_GoogleSatellite_2
-                };
-                var overlayLayers = {
-                    "Rumah Ibadah": layer_RumahIbadah_3
-                };
-                L.control.layers(baseLayers, overlayLayers).addTo(map);
+            function addClassToPopupIfMedia(content, popup) {
+                var tempDiv = document.createElement('div');
+                tempDiv.innerHTML = content;
+                if (tempDiv.querySelector('td img')) {
+                    popup._contentNode.classList.add('media');
+                    setTimeout(function() { popup.update(); }, 10);
+                } else {
+                    popup._contentNode.classList.remove('media');
+                }
             }
-
-            setBounds();
-
-            // ================= FUNGSI PENCARIAN YANG DIPERBAIKI =================
             
+            // ================= FUNGSI PENCARIAN KOORDINAT =================
+            function parseCoordinates(searchTerm) {
+                const term = searchTerm.trim();
+                
+                // Format: lat,lng atau lat, lng
+                let match = term.match(/^(-?\d+\.?\d*),\s*(-?\d+\.?\d*)$/);
+                if (match) {
+                    return {
+                        lat: parseFloat(match[1]),
+                        lng: parseFloat(match[2]),
+                        isValid: true
+                    };
+                }
+                
+                // Format: lat:-7.2575,lng:112.7521 atau lat:-7.2575, lng:112.7521
+                match = term.match(/lat:\s*(-?\d+\.?\d*),?\s*lng:\s*(-?\d+\.?\d*)/i);
+                if (match) {
+                    return {
+                        lat: parseFloat(match[1]),
+                        lng: parseFloat(match[2]),
+                        isValid: true
+                    };
+                }
+                
+                // Format: longitude,latitude (terbalik)
+                match = term.match(/^lng:\s*(-?\d+\.?\d*),?\s*lat:\s*(-?\d+\.?\d*)/i);
+                if (match) {
+                    return {
+                        lat: parseFloat(match[2]),
+                        lng: parseFloat(match[1]),
+                        isValid: true
+                    };
+                }
+                
+                return { isValid: false };
+            }
+            
+            function isValidCoordinateRange(lat, lng) {
+                // Batasan koordinat untuk area Surabaya yang wajar
+                return (lat >= -8.0 && lat <= -6.5 && lng >= 112.0 && lng <= 113.5);
+            }
+            
+            // ================= FUNGSI PENCARIAN UTAMA =================
             function performSearch(searchTerm) {
                 if (!searchTerm || searchTerm.trim().length === 0) {
                     return;
                 }
                 
                 const searchLower = searchTerm.toLowerCase().trim();
-                let foundFeature = null;
-
+                
+                // Cek apakah input adalah koordinat
+                const coords = parseCoordinates(searchTerm);
+                if (coords.isValid) {
+                    searchByCoordinates(coords.lat, coords.lng);
+                    return;
+                }
+                
                 // Cari dalam data rumah ibadah
+                let foundFeature = null;
                 allFeatures.forEach(item => {
-                    if (foundFeature) return; // Skip jika sudah ditemukan
+                    if (foundFeature) return;
                     
                     const properties = item.feature.properties;
                     const nama = properties.NAMA ? properties.NAMA.toLowerCase() : '';
@@ -479,29 +548,54 @@
                 });
 
                 if (foundFeature) {
-                    // Ambil koordinat dari geometry
                     const coords = foundFeature.feature.geometry.coordinates;
-                    const latlng = [coords[1], coords[0]]; // GeoJSON format [lng, lat]
-
-                    // Zoom ke lokasi
+                    const latlng = [coords[1], coords[0]];
                     map.setView(latlng, 17);
                     
-                    // Hapus marker pencarian sebelumnya
                     if (currentSearchMarker) {
                         map.removeLayer(currentSearchMarker);
                         currentSearchMarker = null;
                     }
                     
-                    // Buka popup setelah delay singkat
                     setTimeout(() => {
                         foundFeature.layer.openPopup();
                     }, 500);
                     
                     console.log('Ditemukan: ' + foundFeature.feature.properties.NAMA);
                 } else {
-                    // Jika tidak ditemukan di data lokal, coba pencarian alamat dengan Google
                     searchByAddressGoogle(searchTerm);
                 }
+            }
+            
+            function searchByCoordinates(lat, lng) {
+                if (!isValidCoordinateRange(lat, lng)) {
+                    alert('Koordinat berada di luar area Surabaya. Pastikan koordinat berada dalam rentang:\nLatitude: -8.0 hingga -6.5\nLongitude: 112.0 hingga 113.5');
+                    return;
+                }
+                
+                const latlng = [lat, lng];
+                
+                // Hapus marker pencarian sebelumnya
+                if (currentSearchMarker) {
+                    map.removeLayer(currentSearchMarker);
+                }
+                
+                // Buat marker hasil pencarian koordinat (tanpa bayangan)
+                currentSearchMarker = L.marker(latlng, {
+                    icon: L.icon({
+                        iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-green.png',
+                        iconSize: [25, 41],
+                        iconAnchor: [12, 41],
+                        popupAnchor: [1, -34]
+                        // shadowUrl dihapus untuk menghilangkan bayangan
+                        // shadowSize dihapus untuk menghilangkan bayangan
+                    })
+                }).addTo(map);
+                
+                currentSearchMarker.bindPopup(`<strong>Koordinat yang Dicari</strong><br>Latitude: ${lat}<br>Longitude: ${lng}<br><small>Koordinat: ${lat}, ${lng}</small>`).openPopup();
+                map.setView(latlng, 16);
+                
+                console.log(`Lokasi ditemukan dengan koordinat: ${lat}, ${lng}`);
             }
 
             function searchByAddressGoogle(address) {
@@ -515,18 +609,18 @@
                             const lng = results[0].geometry.location.lng();
                             const latlng = [lat, lng];
 
-                            // Hapus marker pencarian sebelumnya
                             if (currentSearchMarker) {
                                 map.removeLayer(currentSearchMarker);
                             }
 
-                            // Buat marker hasil pencarian
+                            // Marker tanpa bayangan
                             currentSearchMarker = L.marker(latlng, {
                                 icon: L.icon({
                                     iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-green.png',
                                     iconSize: [25, 41],
                                     iconAnchor: [12, 41],
-                                    popupAnchor: [1, -34],
+                                    popupAnchor: [1, -34]
+                                    // shadowUrl dihapus untuk menghilangkan bayangan
                                 })
                             }).addTo(map);
                             
@@ -545,6 +639,7 @@
                 }
             }
 
+            // ================= FUNGSI SUGGESTION =================
             function showSearchSuggestions(searchTerm) {
                 const resultsContainer = document.getElementById('searchResults');
                 const searchLower = searchTerm.toLowerCase().trim();
@@ -555,9 +650,26 @@
                     return;
                 }
                 
+                // Cek apakah input koordinat
+                const coords = parseCoordinates(searchTerm);
+                if (coords.isValid) {
+                    const isValidRange = isValidCoordinateRange(coords.lat, coords.lng);
+                    const statusText = isValidRange ? '✓ Valid' : '⚠ Di luar area Surabaya';
+                    const statusColor = isValidRange ? '#28a745' : '#dc3545';
+                    
+                    resultsContainer.innerHTML = `
+                        <div class="search-result-item" onclick="performSearch('${searchTerm}')">
+                            <strong>📍 Koordinat: ${coords.lat}, ${coords.lng}</strong><br>
+                            <small style="color: ${statusColor};">${statusText}</small>
+                        </div>
+                    `;
+                    resultsContainer.style.display = 'block';
+                    return;
+                }
+                
                 // Cari suggestion dari data rumah ibadah
                 allFeatures.forEach(item => {
-                    if (suggestions.length >= 8) return; // Batasi suggestion
+                    if (suggestions.length >= 8) return;
                     
                     const properties = item.feature.properties;
                     const nama = properties.NAMA || '';
@@ -604,113 +716,142 @@
                 document.getElementById('searchResults').style.display = 'none';
             }
 
-            // Event listeners untuk pencarian
-            const searchInput = document.getElementById('search-input');
+            // ================= EVENT LISTENERS =================
+            function initializeSearchEvents() {
+                const searchInput = document.getElementById('search-input');
 
-            searchInput.addEventListener('input', function(e) {
-                showSearchSuggestions(e.target.value);
-            });
-            
-            searchInput.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    performSearch(e.target.value);
-                    hideSearchResults();
-                } else if (e.key === 'Escape') {
-                    hideSearchResults();
-                }
-            });
+                searchInput.addEventListener('input', function(e) {
+                    showSearchSuggestions(e.target.value);
+                });
+                
+                searchInput.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        performSearch(e.target.value);
+                        hideSearchResults();
+                    } else if (e.key === 'Escape') {
+                        hideSearchResults();
+                    }
+                });
 
-            // Tutup hasil pencarian saat klik di luar
-            document.addEventListener('click', function(e) {
+                // Tutup hasil pencarian saat klik di luar
+                document.addEventListener('click', function(e) {
+                    const searchCard = document.getElementById('search-card');
+                    if (!searchCard.contains(e.target)) {
+                        hideSearchResults();
+                    }
+                });
+            }
+
+            // ================= DRAG AND DROP SEARCH CARD =================
+            function initializeDragDrop() {
                 const searchCard = document.getElementById('search-card');
-                if (!searchCard.contains(e.target)) {
-                    hideSearchResults();
-                }
-            });
+                const handle = searchCard.querySelector('.card-handle');
+                let isDragging = false;
+                let startX, startY, startLeft, startTop;
+                
+                handle.addEventListener('mousedown', function(e) {
+                    isDragging = true;
+                    startX = e.clientX;
+                    startY = e.clientY;
+                    const rect = searchCard.getBoundingClientRect();
+                    startLeft = rect.left;
+                    startTop = rect.top;
+                    searchCard.style.cursor = 'grabbing';
+                    e.preventDefault();
+                });
+                
+                document.addEventListener('mousemove', function(e) {
+                    if (!isDragging) return;
+                    e.preventDefault();
+                    const dx = e.clientX - startX;
+                    const dy = e.clientY - startY;
+                    searchCard.style.left = (startLeft + dx) + 'px';
+                    searchCard.style.top = (startTop + dy) + 'px';
+                    searchCard.style.transform = 'none';
+                });
+                
+                document.addEventListener('mouseup', function() {
+                    if (isDragging) {
+                        isDragging = false;
+                        searchCard.style.cursor = 'grab';
+                    }
+                });
+            }
 
-            // Fungsi drag and drop untuk search card
-            const searchCard = document.getElementById('search-card');
-            const handle = searchCard.querySelector('.card-handle');
-            let isDragging = false;
-            let startX, startY, startLeft, startTop;
-            
-            handle.addEventListener('mousedown', function(e) {
-                isDragging = true;
-                startX = e.clientX;
-                startY = e.clientY;
-                const rect = searchCard.getBoundingClientRect();
-                startLeft = rect.left;
-                startTop = rect.top;
-                searchCard.style.cursor = 'grabbing';
-                e.preventDefault();
-            });
-            
-            document.addEventListener('mousemove', function(e) {
-                if (!isDragging) return;
-                e.preventDefault();
-                const dx = e.clientX - startX;
-                const dy = e.clientY - startY;
-                searchCard.style.left = (startLeft + dx) + 'px';
-                searchCard.style.top = (startTop + dy) + 'px';
-                searchCard.style.transform = 'none';
-            });
-            
-            document.addEventListener('mouseup', function() {
-                if (isDragging) {
-                    isDragging = false;
-                    searchCard.style.cursor = 'grab';
-                }
-            });
-
-            // Fungsi global untuk onclick events
-            window.selectSuggestion = selectSuggestion;
-            
-            // Log untuk debugging
-            console.log('Peta rumah ibadah Surabaya berhasil dimuat');
-            console.log('Total rumah ibadah:', allFeatures.length);
-            
-            // Auto-complete Google Places (jika API tersedia)
-            if (typeof google !== 'undefined' && google.maps && google.maps.places) {
-                try {
-                    const autocomplete = new google.maps.places.Autocomplete(searchInput, {
-                        componentRestrictions: {country: 'ID'},
-                        bounds: new google.maps.LatLngBounds(
-                            new google.maps.LatLng(-7.3, 112.6),
-                            new google.maps.LatLng(-7.2, 112.9)
-                        ),
-                        strictBounds: true,
-                        types: ['establishment']
-                    });
-                    
-                    autocomplete.addListener('place_changed', function() {
-                        const place = autocomplete.getPlace();
-                        if (place.geometry) {
-                            hideSearchResults();
-                            const lat = place.geometry.location.lat();
-                            const lng = place.geometry.location.lng();
-                            
-                            if (currentSearchMarker) {
-                                map.removeLayer(currentSearchMarker);
+            // ================= GOOGLE PLACES AUTOCOMPLETE =================
+            function initializeGooglePlaces() {
+                const searchInput = document.getElementById('search-input');
+                
+                if (typeof google !== 'undefined' && google.maps && google.maps.places) {
+                    try {
+                        const autocomplete = new google.maps.places.Autocomplete(searchInput, {
+                            componentRestrictions: {country: 'ID'},
+                            bounds: new google.maps.LatLngBounds(
+                                new google.maps.LatLng(-7.3, 112.6),
+                                new google.maps.LatLng(-7.2, 112.9)
+                            ),
+                            strictBounds: true,
+                            types: ['establishment']
+                        });
+                        
+                        autocomplete.addListener('place_changed', function() {
+                            const place = autocomplete.getPlace();
+                            if (place.geometry) {
+                                hideSearchResults();
+                                const lat = place.geometry.location.lat();
+                                const lng = place.geometry.location.lng();
+                                
+                                if (currentSearchMarker) {
+                                    map.removeLayer(currentSearchMarker);
+                                }
+                                
+                                // Marker tanpa bayangan
+                                currentSearchMarker = L.marker([lat, lng], {
+                                    icon: L.icon({
+                                        iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-green.png',
+                                        iconSize: [25, 41],
+                                        iconAnchor: [12, 41],
+                                        popupAnchor: [1, -34]
+                                        // shadowUrl dihapus untuk menghilangkan bayangan
+                                    })
+                                }).addTo(map);
+                                
+                                currentSearchMarker.bindPopup('<strong>' + place.name + '</strong><br>' + place.formatted_address).openPopup();
+                                map.setView([lat, lng], 16);
                             }
-                            
-                            currentSearchMarker = L.marker([lat, lng], {
-                                icon: L.icon({
-                                    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-green.png',
-                                    iconSize: [25, 41],
-                                    iconAnchor: [12, 41],
-                                    popupAnchor: [1, -34],
-                                })
-                            }).addTo(map);
-                            
-                            currentSearchMarker.bindPopup('<strong>' + place.name + '</strong><br>' + place.formatted_address).openPopup();
-                            map.setView([lat, lng], 16);
-                        }
-                    });
-                } catch(error) {
-                    console.warn('Google Places Autocomplete tidak dapat diinisialisasi:', error);
+                        });
+                    } catch(error) {
+                        console.warn('Google Places Autocomplete tidak dapat diinisialisasi:', error);
+                    }
                 }
             }
+
+            // ================= INISIALISASI UTAMA =================
+            function initialize() {
+                initializeMap();
+                initializeLayers();
+                initializeControls();
+                initializeSearchEvents();
+                initializeDragDrop();
+                initializeGooglePlaces();
+                
+                // Fungsi global untuk onclick events
+                window.selectSuggestion = selectSuggestion;
+                window.performSearch = performSearch;
+                
+                // Log untuk debugging
+                console.log('Peta rumah ibadah Surabaya berhasil dimuat');
+                console.log('Total rumah ibadah:', allFeatures.length);
+                console.log('Fitur pencarian koordinat tersedia');
+                console.log('Format koordinat yang didukung:');
+                console.log('  - lat,lng: -7.2575,112.7521');
+                console.log('  - lat: -7.2575, lng: 112.7521');
+                console.log('  - lng: 112.7521, lat: -7.2575');
+            }
+
+            // Mulai aplikasi ketika halaman selesai dimuat
+            document.addEventListener('DOMContentLoaded', initialize);
         </script>
     </body>
 </html>
